@@ -25,6 +25,15 @@
 \renewcommand{\arraystretch}{1.16}
 \pagestyle{plain}
 
+\newcommand{\voyageframe}[2]{%
+  \begin{minipage}[t]{0.475\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{#1}\par
+    \vspace{2pt}
+    {\footnotesize #2\par}
+  \end{minipage}%
+}
+
 \begin{document}
 \begin{center}
   {\heiti\color{ink}\fontsize{20}{27}\selectfont 视觉世界模型驱动的无人艇航行模拟软件开发日志\par}
@@ -68,7 +77,7 @@
   \item[推演未来] \texttt{motion.onnx} 从该估计状态出发，按候选转速和舵角反复预测下一步状态。规划器按绕标侧、净距与限速评估航迹，选定方案后执行第一步，再用新的相机帧更新估计。
 \end{description}
 
-例如反向起航时，艇从画面中的箭头色块估计艏向，随后比较左转和右转的掉头轨迹。三维窗里的琥珀色「5 秒预测」虚线与视觉解析窗中的琥珀色箭头显示选中的方案，青色实线记录已走航迹。图~\ref{fig:reverse-turn} 展示了这次选择在界面上的样子。
+例如反向起航时，艇从画面中的箭头色块估计艏向，随后比较左转和右转的掉头轨迹。三维窗里的琥珀色「5 秒预测」虚线与视觉解析窗中的琥珀色箭头显示选中的方案，青色实线记录已走航迹。图~\ref{fig:inlet-voyage} 的第（b）幅展示了这次选择。
 
 \begin{center}
   \begin{tikzpicture}[
@@ -98,13 +107,13 @@
   \label{fig:world-model-flow}
 \end{center}
 
-\newpage
 \section{感知、推演与控制}
 
 \subsection{视觉定位和浮排检测}
 
 前视相机以约 \(10\,\mathrm{Hz}\) 输出 \(160\times96\) 的 RGB 帧。系统匹配岸标及方向箭头两端的色块，在已知相机内参和海图坐标的条件下，通过最小化重投影残差求艇位及艏向。投影关系采用针孔相机模型\cite{zhang2000}。航标识别使用色带的像素连通区域。临时圆形浮排通过色带的水平张角和已知半径估计距离，并在至少四次一致观测后参与规划。
 
+\newpage
 \subsection{视觉时序估计与动力学}
 
 CNN 编码最近 20 帧缩小至 \(40\times24\) 的图像。GRU 融合图像特征、视觉定位结果和已发指令的历史，校正位姿并估计速度与角速度\cite{cho2014}。动作推演根据纵荡、横荡与艏摇这三个自由度组织状态，用仿真轨迹拟合推力、阻尼和转向耦合系数。运动结构参考船舶操纵模型\cite{fossen2021}。
@@ -114,9 +123,14 @@ CNN 编码最近 20 帧缩小至 \(40\times24\) 的图像。GRU 融合图像特�
 规划器每 \(0.25\,\mathrm{s}\) 以估计状态为起点，按候选转速和舵角向前推演 \(5\,\mathrm{s}\)。候选轨迹依据通过侧、艇身净距、航线偏差和过门速度评分，当前只执行首个指令。反向入航时分别预测左右掉头的 \(10\,\mathrm{s}\) 轨迹，优先采用有离岸余量的方案。下一帧更新后重新规划。
 
 \begin{center}
-  \includegraphics[width=0.91\linewidth]{reverse-start.png}
-  \captionof{figure}{反向起航。艇从两岸箭头的色块校正艏向，视觉解析窗叠加选择的掉头方向。}
-  \label{fig:reverse-turn}
+  \voyageframe{voyage/01-ready.png}{（a）选定内湾港与反向起航}\hfill
+  \voyageframe{reverse-start.png}{（b）识别方向箭头并掉头}\par\smallskip
+  \voyageframe{voyage/03-buoys.png}{（c）已通过两个航标}\hfill
+  \voyageframe{voyage/04-avoidance.png}{（d）从浮排右侧绕行}\par\smallskip
+  \voyageframe{voyage/05-gate.png}{（e）减速接近出场门}\hfill
+  \voyageframe{voyage/06-finish.png}{（f）通过四个航标并完成航次}
+  \captionof{figure}{同一次内湾港反向航次的六张实机截图。全程 \(54.00\,\mathrm{s}\)，过门速度 \(0.62\,\mathrm{m/s}\)，最小净距 \(0.95\,\mathrm{m}\)。}
+  \label{fig:inlet-voyage}
 \end{center}
 
 \newpage

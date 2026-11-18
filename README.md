@@ -24,6 +24,18 @@ Three.js + Vite 渲染港池，船模由 `createVessel()` 在运行时生成。�
 
 「艇载前视」显示原始相机帧。「视觉解析」在同一帧上框出从 RGB 色带检出的航标，标注橙标、黄标、绿标或蓝标，并框出检出的浮排。琥珀箭头显示控制器选中的预测航迹。避障和减速阶段会显示对应的操作状态。
 
+## 一次完整航次
+
+这六张截图来自同一次内湾港反向航次。无人艇用时 **54.00 s**，通过 **4/4** 个航标，最小净距 **0.95 m**，以 **0.62 m/s** 通过出场门。点击图片可查看原图。
+
+| 1. 选定内湾港与反向起航 | 2. 识别方向箭头并掉头 |
+| --- | --- |
+| [![待命时选定内湾港与反向起航](docs/images/voyage/01-ready.png)](docs/images/voyage/01-ready.png) | [![从画面中的箭头估计艏向并掉头](docs/images/reverse-start.png)](docs/images/reverse-start.png) |
+| **3. 已通过两个航标** | **4. 从浮排右侧绕行** |
+| [![航标通过数为 2/4](docs/images/voyage/03-buoys.png)](docs/images/voyage/03-buoys.png) | [![视觉解析识别浮排并显示绕行轨迹](docs/images/voyage/04-avoidance.png)](docs/images/voyage/04-avoidance.png) |
+| **5. 减速接近出场门** | **6. 通过四个航标并完成航次** |
+| [![艇在出场门前减速](docs/images/voyage/05-gate.png)](docs/images/voyage/05-gate.png) | [![四标通过和出场完成状态](docs/images/voyage/06-finish.png)](docs/images/voyage/06-finish.png) |
+
 ## 观测与控制
 
 控制 Worker 每帧收到前视 RGB、已发出的转速与舵角指令、采样时间。换港池时提供已测绘的固定岸标、航标位置、通过侧和出场门参数。仿真坐标用于渲染、训练监督和独立评分。
