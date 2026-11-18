@@ -70,7 +70,7 @@ python training/evaluate.py --reverse-start --count 3 --ablation
 
 ## 编译开发日志
 
-在包含 CTeX 和 Fandol 字体的 TeX Live 环境中，通过 XeLaTeX 运行两次以解析交叉引用。
+在包含 CTeX、Fandol 字体和 PGF/TikZ 的 TeX Live 环境中，通过 XeLaTeX 运行两次以解析交叉引用。
 
 ```powershell
 cd docs

@@ -1,6 +1,7 @@
 \documentclass[a4paper,UTF8,fontset=fandol,zihao=-4]{ctexart}
 \usepackage[margin=20mm,top=18mm,bottom=18mm]{geometry}
-\usepackage{lmodern,amsmath,booktabs,tabularx,graphicx,caption,xcolor}
+\usepackage{lmodern,amsmath,booktabs,tabularx,graphicx,caption,xcolor,tikz}
+\usetikzlibrary{arrows.meta}
 \usepackage[unicode,colorlinks]{hyperref}
 
 \definecolor{ink}{HTML}{1B343A}
@@ -58,6 +59,46 @@
 \end{center}
 
 \newpage
+\section{世界模型在软件中如何工作}
+
+世界模型把刚看到的画面转化为当前艇况，再回答给出某个转速和舵角后，艇接下来会怎么走。它由两组在浏览器 Worker 中运行的 ONNX 权重实现。
+
+\begin{description}
+  \item[估计现在] \texttt{observer.onnx} 融合最近约 2 秒的前视画面、从岸标得到的光学定位结果和已发指令，估计艇的位置、艏向及运动速度。
+  \item[推演未来] \texttt{motion.onnx} 从该估计状态出发，按候选转速和舵角反复预测下一步状态。规划器按绕标侧、净距与限速评估航迹，选定方案后执行第一步，再用新的相机帧更新估计。
+\end{description}
+
+例如反向起航时，艇从画面中的箭头色块估计艏向，随后比较左转和右转的掉头轨迹。三维窗里的琥珀色「5 秒预测」虚线与视觉解析窗中的琥珀色箭头显示选中的方案，青色实线记录已走航迹。图~\ref{fig:reverse-turn} 展示了这次选择在界面上的样子。
+
+\begin{center}
+  \begin{tikzpicture}[
+    block/.style={draw=sea!48,fill=sea!6,rounded corners=2mm,
+      text=ink,align=center,text width=28mm,minimum height=13mm,inner sep=2mm},
+    note/.style={text=ink,font=\footnotesize,align=center,inner sep=2pt},
+    flow/.style={-{Stealth[length=2.4mm,width=1.7mm]},draw=sea,line width=0.7pt},
+    training/.style={flow,draw=ink!57}
+  ]
+    \node[block] (sim) at (0,0) {SeaTrial 仿真与\\Three.js 场景};
+    \node[block,fill=ink!5,draw=ink!45,text width=34mm] (train) at (3.3,2.5) {PyTorch 离线训练};
+    \node[block,fill=sea!13] (world) at (6.6,0) {浏览器 Worker\\世界模型};
+    \node[block,text width=19mm] (plan) at (11.7,0) {滚动规划};
+
+    \draw[training] (sim.north)
+      -- node[note,left] {训练帧、指令\\和状态标签} (0,2.5)
+      -- (train.west);
+    \draw[training] (train.east) -- (6.6,2.5)
+      -- node[note,right] {ONNX 权重} (world.north);
+    \draw[flow] (sim.east) -- node[note,above] {实时前视帧和\\已发指令} (world.west);
+    \draw[flow] (world.east) -- node[note,above] {候选预测航迹} (plan.west);
+    \draw[flow] (plan.south) -- (11.7,-1.6)
+      -- node[note,below] {本步转速和舵角} (0,-1.6)
+      -- (sim.south);
+  \end{tikzpicture}
+  \captionof{figure}{实施方案中的流程图。离线训练导出模型权重，在线回路从相机取帧到执行控制。}
+  \label{fig:world-model-flow}
+\end{center}
+
+\newpage
 \section{感知、推演与控制}
 
 \subsection{视觉定位和浮排检测}
@@ -75,6 +116,7 @@ CNN 编码最近 20 帧缩小至 \(40\times24\) 的图像。GRU 融合图像特�
 \begin{center}
   \includegraphics[width=0.91\linewidth]{reverse-start.png}
   \captionof{figure}{反向起航。艇从两岸箭头的色块校正艏向，视觉解析窗叠加选择的掉头方向。}
+  \label{fig:reverse-turn}
 \end{center}
 
 \newpage
