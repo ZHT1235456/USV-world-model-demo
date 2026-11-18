@@ -1,0 +1,124 @@
+\documentclass[a4paper,UTF8,fontset=fandol,zihao=-4]{ctexart}
+\usepackage[margin=20mm,top=18mm,bottom=18mm]{geometry}
+\usepackage{lmodern,amsmath,booktabs,tabularx,graphicx,caption,xcolor}
+\usepackage[unicode,colorlinks]{hyperref}
+
+\definecolor{ink}{HTML}{1B343A}
+\definecolor{sea}{HTML}{245F5B}
+\hypersetup{
+  pdftitle={视觉世界模型驱动的无人艇航行模拟软件开发日志},
+  pdfauthor={朱华天，GPT-6.2 Sol},
+  linkcolor=sea,urlcolor=sea,citecolor=sea
+}
+\ctexset{
+  section/format=\Large\heiti\color{ink},
+  section/beforeskip=0.8\baselineskip,
+  section/afterskip=0.42\baselineskip,
+  subsection/format=\large\heiti\color{ink},
+  subsection/beforeskip=0.55\baselineskip,
+  subsection/afterskip=0.25\baselineskip
+}
+\graphicspath{{images/}}
+\captionsetup{font=small,labelfont=bf,skip=5pt,hypcap=false,labelsep=quad}
+\setlength{\parskip}{0.28em}
+\renewcommand{\arraystretch}{1.16}
+\pagestyle{plain}
+
+\begin{document}
+\begin{center}
+  {\heiti\color{ink}\fontsize{20}{27}\selectfont 视觉世界模型驱动的无人艇航行模拟软件开发日志\par}
+  \vspace{0.6em}
+  {\large 朱华天，GPT-6.2 Sol\par}
+  \vspace{0.28em}
+  2026年11月18日\par
+  {\small\url{https://github.com/ZHT1235456/USV-world-model-demo}\par}
+\end{center}
+
+\section{开发目标与实现过程}
+
+软件在模拟港池中运行一艘无人艇。艇按海图指定的侧别和顺序通过彩色航标，临时发现浮排后择侧绕行，最后减速穿过出场门。界面同步显示三维场景、原始艇载前视帧和叠加识别框及预测箭头的画面。
+
+开发先接通船模、艇载相机和三标航线，再将视觉状态估计与船体动力学拆成两个可复用模块。选舵流程借鉴 PlaNet 从视觉观测出发、预测未来运动再选择动作的思路\cite{hafner2019}。应用随后扩展到浮排避障、低速穿门和反向起航。各港池共享模型权重，海图配置航标次序、通行侧与门的位置。
+
+\section{技术栈}
+
+\noindent\begin{tabularx}{\linewidth}{@{}p{25mm}X@{}}
+  \toprule
+  环节 & 实现 \\
+  \midrule
+  场景与界面 & Three.js、Vite 和 JavaScript 绘制程序化艇模、港池和回放界面。\\
+  仿真与训练 & JavaScript 推进船体运动并采集 RGB 序列，PyTorch 拟合视觉估计器与状态转移参数。\\
+  推理与部署 & ONNX Runtime Web 在 Web Worker 内用 WASM 推理。Tauri 2、Rust 和 WebView2 封装 Windows 免安装程序。\\
+  \bottomrule
+\end{tabularx}
+
+\begin{center}
+  \includegraphics[width=0.92\linewidth,height=74mm,keepaspectratio]{interface.png}
+  \captionof{figure}{模拟器实机界面。左侧为港池和船模，右上为原始前视，右下为同帧视觉解析。}
+\end{center}
+
+\newpage
+\section{感知、推演与控制}
+
+\subsection{视觉定位和浮排检测}
+
+前视相机以约 \(10\,\mathrm{Hz}\) 输出 \(160\times96\) 的 RGB 帧。系统匹配岸标及方向箭头两端的色块，在已知相机内参和海图坐标的条件下，通过最小化重投影残差求艇位及艏向。投影关系采用针孔相机模型\cite{zhang2000}。航标识别使用色带的像素连通区域。临时圆形浮排通过色带的水平张角和已知半径估计距离，并在至少四次一致观测后参与规划。
+
+\subsection{视觉时序估计与动力学}
+
+CNN 编码最近 20 帧缩小至 \(40\times24\) 的图像。GRU 融合图像特征、视觉定位结果和已发指令的历史，校正位姿并估计速度与角速度\cite{cho2014}。动作推演根据纵荡、横荡与艏摇这三个自由度组织状态，用仿真轨迹拟合推力、阻尼和转向耦合系数。运动结构参考船舶操纵模型\cite{fossen2021}。
+
+\subsection{滚动选舵}
+
+规划器每 \(0.25\,\mathrm{s}\) 以估计状态为起点，按候选转速和舵角向前推演 \(5\,\mathrm{s}\)。候选轨迹依据通过侧、艇身净距、航线偏差和过门速度评分，当前只执行首个指令。反向入航时分别预测左右掉头的 \(10\,\mathrm{s}\) 轨迹，优先采用有离岸余量的方案。下一帧更新后重新规划。
+
+\begin{center}
+  \includegraphics[width=0.91\linewidth]{reverse-start.png}
+  \captionof{figure}{反向起航。艇从两岸箭头的色块校正艏向，视觉解析窗叠加选择的掉头方向。}
+\end{center}
+
+\newpage
+\section{训练与验收}
+
+视觉估计器使用五种港池布局采集的 \(60\) 趟航次重训，顺向、反向和侧向起航各 \(20\) 趟。验证集有 \(15\) 趟，离线测试集有 \(12\) 趟。外堤港和内湾港按整座布局留出测试。拟合和评分可读取仿真状态，在线控制器逐帧取得的是 RGB、已发指令及采样时间，换场时加载固定海图。
+
+\noindent\begin{tabularx}{\linewidth}{@{}p{43mm}X@{}}
+  \toprule
+  验收项目 & 结果 \\
+  \midrule
+  顺向航次 & 三个场景共通过 \(39/39\) 趟。两座留出港池的 \(26\) 趟综合航次中，浮排最小净距为 \(0.823\,\mathrm{m}\)，最高过门速度为 \(0.649\,\mathrm{m/s}\)。\\
+  反向航次 & 三个场景共通过 \(12/12\) 趟。第一舵前的最大艏向误差为 \(0.647^\circ\)。\\
+  遮蔽箭头对照 & 三趟反向航次第一舵前的艏向误差为 \(178.8^\circ\) 至 \(179.9^\circ\)，随后在转弯过程中重新看到岸标并完成航次。\\
+  \bottomrule
+\end{tabularx}
+
+上述结果对应具有已测绘岸标、可见导航色块和静态浮排的仿真港池。源码提供数据采集、训练和闭环评估脚本，并附带界面运行所需的 ONNX 权重。
+
+\begin{thebibliography}{9}
+\small
+\bibitem{hafner2019}
+Hafner D, Lillicrap T, Fischer I, et al.
+Learning Latent Dynamics for Planning from Pixels.
+\emph{Proceedings of the 36th International Conference on Machine Learning},
+PMLR 97, 2555--2565, 2019.
+\href{https://proceedings.mlr.press/v97/hafner19a.html}{PMLR 论文}
+
+\bibitem{zhang2000}
+Zhang Z. A Flexible New Technique for Camera Calibration.
+\emph{IEEE Transactions on Pattern Analysis and Machine Intelligence},
+22(11), 1330--1334, 2000.
+\href{https://doi.org/10.1109/34.888718}{DOI 10.1109/34.888718}
+
+\bibitem{cho2014}
+Cho K, van Merri\"enboer B, Gulcehre C, et al.
+Learning Phrase Representations using RNN Encoder--Decoder for Statistical Machine Translation.
+\emph{Proceedings of EMNLP}, 1724--1734, 2014.
+\href{https://aclanthology.org/D14-1179/}{ACL Anthology}
+
+\bibitem{fossen2021}
+Fossen T I. \emph{Handbook of Marine Craft Hydrodynamics and Motion Control}.
+2nd ed., Wiley, 2021.
+\href{https://doi.org/10.1002/9781119575016}{DOI 10.1002/9781119575016}
+\end{thebibliography}
+
+\end{document}

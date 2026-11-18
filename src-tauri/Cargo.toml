@@ -1,0 +1,11 @@
+[package]
+name = "harbor-trial"
+version = "0.1.0"
+edition = "2021"
+description = "视觉世界模型驱动的无人艇航行模拟"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }

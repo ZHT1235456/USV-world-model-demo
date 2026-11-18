@@ -1,0 +1,58 @@
+{
+  "version": 3,
+  "training": {
+    "voyages": 60,
+    "validation": 15,
+    "test": 12,
+    "frames": 21444,
+    "branches": 11420,
+    "fitting_courses": [
+      "basin",
+      "drydock",
+      "estuary",
+      "original",
+      "quay"
+    ],
+    "validation_courses": [
+      "basin",
+      "drydock",
+      "estuary",
+      "original",
+      "quay"
+    ],
+    "held_out_courses": [
+      "breakwater",
+      "inlet"
+    ],
+    "departures": {
+      "reverse": 20,
+      "sideways": 20,
+      "forward": 20
+    },
+    "motion_reused": true
+  },
+  "metrics": {
+    "vision": {
+      "ade": 0.0688,
+      "fde": 0.0777,
+      "heading": 0.639,
+      "branches": 2740
+    },
+    "actions": {
+      "ade": 6.1782,
+      "fde": 6.6946,
+      "heading": 23.016,
+      "branches": 2740
+    },
+    "known_state": {
+      "ade": 0.0107,
+      "fde": 0.0189,
+      "heading": 0.22,
+      "branches": 2740
+    }
+  },
+  "onnx_parity": {
+    "observer": 3.5390257835388184e-08,
+    "motion": 0.0
+  }
+}

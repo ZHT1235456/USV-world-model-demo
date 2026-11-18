@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#101f2b" />
+    <meta name="description" content="使用共享视觉世界模型的无人艇绕标、避障与低速穿门仿真" />
+    <link rel="icon" href="/favicon.png" type="image/png" />
+    <title>视觉世界模型驱动的无人艇航行模拟</title>
+  </head>
+  <body>
+    <div class="application">
+      <header class="masthead">
+        <div class="identity">
+          <div class="crest" aria-hidden="true"><i></i><b></b></div>
+          <h1>视觉世界模型驱动的无人艇航行模拟</h1>
+        </div>
+        <div class="mast-actions">
+          <div class="model-health" role="status"><span id="model-dot" class="dot"></span><span id="model-status">正在加载世界模型</span></div>
+          <button id="fullscreen" class="quiet-button fullscreen" type="button" hidden><kbd>F11</kbd><span id="fullscreen-label">窗口模式</span></button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="stage" id="stage" aria-label="港湾三维场景">
+          <div class="stage-top">
+            <div class="stage-controls">
+              <label class="course-picker"><select id="course" aria-label="选择试航港池" disabled></select></label>
+              <label class="course-picker">
+                <select id="departure" aria-label="选择起航朝向" disabled>
+                  <option value="forward">顺向起航</option>
+                  <option value="reverse">反向起航</option>
+                </select>
+              </label>
+              <div class="flight-state">
+                <span id="scene-state">待命</span>
+                <span id="course-progress" class="mono" aria-label="已通过航标">0 / 3</span>
+              </div>
+            </div>
+            <div class="view-picker" aria-label="选择视角">
+              <button type="button" data-view="follow" aria-pressed="true">跟拍</button>
+              <button type="button" data-view="top" aria-pressed="false">俯视</button>
+            </div>
+          </div>
+          <div class="stage-dock">
+            <div class="stage-caption">
+              <div class="legend" aria-label="航迹图例">
+                <span><i></i>已走航迹</span>
+                <span><i></i>5 秒预测</span>
+              </div>
+              <div id="run-notification" class="run-note" role="status" hidden>
+                <strong id="run-note"></strong><span id="run-detail"></span>
+              </div>
+            </div>
+            <footer class="timeline" aria-label="试航控制和回放">
+              <div class="run-actions">
+                <button type="button" id="start" class="primary-button" aria-label="开始" disabled><span id="control-icon" aria-hidden="true"></span></button>
+                <button type="button" id="reset" class="quiet-button" disabled>重置</button>
+                <button type="button" id="replay" class="quiet-button" hidden>回放</button>
+              </div>
+              <div class="time-body">
+                <div class="time-head"><span id="time-mode">试航时间</span><span id="time-value" class="mono">00.00 s</span></div>
+                <input type="range" id="timeline" aria-label="回放时间" disabled min="0" max="5" step="0.05" value="0" />
+              </div>
+            </footer>
+          </div>
+        </section>
+
+        <aside class="vision-feed" aria-label="同源艇载前视与视觉解析">
+          <section class="sensor">
+            <div class="section-heading"><h2>艇载前视</h2><span id="sensor-clock" class="mono">待命</span></div>
+            <div class="sensor-frame">
+              <canvas id="sensor" width="160" height="96" aria-label="送往世界模型的原始前视相机画面"></canvas>
+            </div>
+          </section>
+          <section class="sensor analysis-panel">
+            <div class="section-heading"><h2>视觉解析</h2><span id="analysis-status">待采样</span></div>
+            <div class="sensor-frame">
+              <canvas id="analysis" width="480" height="288" aria-label="同一帧前视画面叠加航标、浮排识别框和规划箭头"></canvas>
+            </div>
+          </section>
+        </aside>
+      </main>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
