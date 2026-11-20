@@ -1,5 +1,5 @@
 import { decisionStep, wrapAngle } from './mission.js';
-import { buoyBands } from './courses.js';
+import { buoyBands, gateBands } from './courses.js';
 import { cameraForward, cameraHeight, focal, sensorHeight, sensorWidth } from './optics.js';
 import { clamp } from './simulation.js';
 
@@ -10,6 +10,7 @@ const bandColors = buoyBands.map(({ id, band }) => ({
   b: band & 255,
 }));
 const buoyLabels = new Map(buoyBands.map(({ id, label }) => [id, label]));
+const gateColors = gateBands.map(({ color }) => [color >> 16, (color >> 8) & 255, color & 255]);
 
 function bandPixels(rgb) {
   const labeled = new Uint8Array(sensorWidth * sensorHeight);
@@ -72,6 +73,35 @@ export function detectBuoys(rgb) {
   return [...best.values()];
 }
 
+export function detectGate(rgb) {
+  const labeled = new Uint8Array(sensorWidth * sensorHeight);
+  // Both colored sleeves sit near the horizon while the boat approaches the gate.
+  for (let pixel = sensorWidth * 24; pixel < sensorWidth * 57; pixel++) {
+    const i = pixel * 3;
+    const signature = gateColors.findIndex(([r, g, b]) =>
+      (rgb[i] - r) ** 2 + (rgb[i + 1] - g) ** 2 + (rgb[i + 2] - b) ** 2 <= 64);
+    labeled[pixel] = signature + 1;
+  }
+  const posts = [null, null];
+  for (let pixel = 0; pixel < labeled.length; pixel++) {
+    const id = labeled[pixel];
+    if (!id) continue;
+    const patch = measureBand(labeled, pixel, id);
+    if (patch.count >= 2 && patch.count > (posts[id - 1]?.count ?? 0)) posts[id - 1] = patch;
+  }
+  const [port, starboard] = posts;
+  if (!port || !starboard) return null;
+  const span = (starboard.minX + starboard.maxX - port.minX - port.maxX) / 2;
+  const rise = (starboard.minY + starboard.maxY - port.minY - port.maxY) / 2;
+  if (span < 4 || Math.abs(rise) > Math.max(2, span * 0.14)) return null;
+  const left = Math.max(0, port.minX - 1);
+  const right = Math.min(sensorWidth, starboard.maxX + 2);
+  const top = Math.max(0, Math.min(port.minY, starboard.minY) - 1);
+  const bottom = Math.min(sensorHeight, Math.max(port.maxY, starboard.maxY) + 2);
+  return { id: 'gate', label: '终点 · 出场门', x: left, y: top, width: right - left, height: bottom - top,
+    count: port.count + starboard.count };
+}
+
 function projectedRoute(plan, frameTime) {
   if (!plan?.trajectory.length || !Number.isFinite(plan.observationTime)) return [];
   const elapsed = clamp(frameTime - plan.observationTime, 0, plan.trajectory.at(-1).seconds);
@@ -95,75 +125,188 @@ function projectedRoute(plan, frameTime) {
   });
 }
 
-function drawArrow(ctx, points) {
+// ── HUD language ────────────────────────────────────────────────────────
+// The analysis canvas is the model's eye, so its marks follow the console
+// language: sea-glass for perception, coral for the obstacle, amber for the
+// forecast. Every coloured mark is laid over a thin ink casing so it holds on
+// the pale dawn sky as well as on the dark water. Nothing glows, nothing
+// animates — only the marks that do a job are drawn.
+const HUD = {
+  ink: 'rgba(7, 16, 19, .9)',
+  casing: 'rgba(7, 16, 19, .66)',
+  plate: 'rgba(6, 14, 16, .88)',
+  bone: '#f2eadf',
+  amber: '#f3c86f',
+  guide: '#8ce2a0',
+  sea: '#6fd9cc',
+  seaActive: '#b9f7ec',
+  gate: '#a4e3f7',
+  coral: '#e2947f',
+};
+
+// Translucent border/fill from a solid hex mark colour.
+function tinted(hex, alpha) {
+  const value = parseInt(hex.slice(1), 16);
+  return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`;
+}
+
+// Four L-corners of a target box. Arm is 22% of the shorter side, with a
+// floor of ~7 display-canvas px so far targets stay bracketed.
+function cornerPath(ctx, box, arm) {
+  const right = box.x + box.width;
+  const bottom = box.y + box.height;
+  ctx.moveTo(box.x, box.y + arm);
+  ctx.lineTo(box.x, box.y);
+  ctx.lineTo(box.x + arm, box.y);
+  ctx.moveTo(right - arm, box.y);
+  ctx.lineTo(right, box.y);
+  ctx.lineTo(right, box.y + arm);
+  ctx.moveTo(right, bottom - arm);
+  ctx.lineTo(right, bottom);
+  ctx.lineTo(right - arm, bottom);
+  ctx.moveTo(box.x + arm, bottom);
+  ctx.lineTo(box.x, bottom);
+  ctx.lineTo(box.x, bottom - arm);
+}
+
+function drawTarget(ctx, box, color, active, unit) {
+  const px = (value) => value * unit;
+  const shorter = Math.min(box.width, box.height);
+  const arm = Math.min(Math.max(shorter * 0.22, px(7)), shorter * 0.42, px(30));
+  ctx.save();
+  ctx.lineJoin = 'miter';
+
+  // Ghost field: a 1px trace of the full rectangle, quiet enough to stay a
+  // field note rather than a second frame.
+  ctx.lineWidth = px(1);
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = active ? 0.3 : 0.24;
+  ctx.strokeRect(box.x, box.y, box.width, box.height);
+
+  // Corner brackets, cased in ink so the sea-glass holds on the bright sky.
+  ctx.globalAlpha = 1;
+  ctx.beginPath();
+  cornerPath(ctx, box, arm);
+  ctx.lineWidth = px(5);
+  ctx.strokeStyle = HUD.casing;
+  ctx.stroke();
+  ctx.beginPath();
+  cornerPath(ctx, box, arm);
+  ctx.lineWidth = px(2.4);
+  ctx.strokeStyle = color;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawLabel(ctx, box, color, active, fontSize, unit, tags) {
+  const px = (value) => value * unit;
+  const name = box.label ?? (box.id === 'raft' ? '浮排' : buoyLabels.get(box.id) ?? '航标');
+  const padX = px(4);
+  const textWidth = ctx.measureText(name).width;
+  const width = padX * 2 + textWidth;
+  const height = fontSize + px(4.8);
+  const x = clamp(box.x, px(1.5), sensorWidth - width - px(1.5));
+  const y = Math.max(px(1.5), box.y - height - px(1.5));
+  if (tags.some((tag) => x < tag.x + tag.width && x + width > tag.x
+    && y < tag.y + tag.height && y + height > tag.y)) return;
+  tags.push({ x, y, width, height });
+
+  // Sharp label plate: dark ink, hairline in the target colour, bone type.
+  ctx.fillStyle = HUD.plate;
+  ctx.fillRect(x, y, width, height);
+  ctx.lineWidth = px(1);
+  ctx.strokeStyle = tinted(color, active ? 0.8 : 0.55);
+  ctx.strokeRect(x + px(0.5), y + px(0.5), width - px(1), height - px(1));
+
+  // Centre on the glyph ink box rather than the em box: CJK glyphs sit low.
+  const metrics = ctx.measureText(name);
+  const ascent = metrics.actualBoundingBoxAscent || fontSize * 0.74;
+  const descent = metrics.actualBoundingBoxDescent || fontSize * 0.22;
+  ctx.fillStyle = HUD.bone;
+  ctx.fillText(name, x + padX, y + (height - ascent - descent) / 2 + ascent);
+}
+
+function drawBoxes(ctx, detections, activeId, guide, fontSize, unit) {
+  const sorted = detections.slice().sort((a, b) =>
+    Number(b.id === 'gate') - Number(a.id === 'gate')
+    || Number(b.id === activeId) - Number(a.id === activeId) || b.count - a.count);
+  const tags = [];
+  ctx.font = `500 ${fontSize}px "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif`;
+  ctx.textBaseline = 'alphabetic';
+  for (const box of sorted) {
+    const active = box.id === activeId;
+    const color = box.id === 'gate' ? HUD.gate : active ? HUD.seaActive : box.id === 'raft' ? HUD.coral : HUD.sea;
+    drawTarget(ctx, box, color, active, unit);
+    drawLabel(ctx, box, color, active, fontSize, unit, tags);
+  }
+  if (guide) {
+    const { tail, tip } = guide;
+    drawArrow(ctx, [tail, tip], unit, HUD.guide);
+    drawLabel(ctx, { x: Math.min(tail.x, tip.x), y: Math.min(tail.y, tip.y), label: '航道方向' },
+      HUD.guide, true, fontSize, unit, tags);
+  }
+}
+
+// Forecast line: one amber stroke in an ink casing with a single clean
+// arrowhead. No shadowBlur — the casing does the contrast work on both the
+// pale sky and the dark water.
+function drawArrow(ctx, points, unit, color = HUD.amber) {
   if (points.length < 2) return;
-  const end = points.at(-1), previous = points.at(-2);
+  const px = (value) => value * unit;
+  const end = points.at(-1);
+  const previous = points.at(-2);
   const angle = Math.atan2(end.y - previous.y, end.x - previous.x);
+  const trace = () => {
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let index = 1; index < points.length; index++) ctx.lineTo(points[index].x, points[index].y);
+  };
   ctx.save();
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.moveTo(points[0].x, points[0].y);
-  for (const p of points.slice(1)) ctx.lineTo(p.x, p.y);
-  ctx.lineWidth = 4.5;
-  ctx.strokeStyle = '#14232ad1';
+  trace();
+  ctx.lineWidth = px(4.8);
+  ctx.strokeStyle = HUD.ink;
   ctx.stroke();
-  ctx.lineWidth = 1.8;
-  ctx.strokeStyle = '#ffd096';
-  ctx.shadowBlur = 5;
-  ctx.shadowColor = '#f2aa60';
+  ctx.beginPath();
+  trace();
+  ctx.lineWidth = px(2.05);
+  ctx.strokeStyle = color;
   ctx.stroke();
+
+  // Arrowhead: ink casing, amber tip, sized like a plotted course mark.
   ctx.translate(end.x, end.y);
   ctx.rotate(angle);
-  ctx.beginPath();
-  ctx.moveTo(3.4, 0);
-  ctx.lineTo(-2.7, 2.9);
-  ctx.lineTo(-2.7, -2.9);
-  ctx.closePath();
-  ctx.fillStyle = '#ffd096';
+  const head = (nose, back, half) => {
+    ctx.beginPath();
+    ctx.moveTo(px(nose), 0);
+    ctx.lineTo(px(back), px(half));
+    ctx.lineTo(px(back), px(-half));
+    ctx.closePath();
+  };
+  head(5.8, -4.6, 4.9);
+  ctx.fillStyle = HUD.ink;
+  ctx.fill();
+  head(4.8, -3.6, 3.7);
+  ctx.fillStyle = color;
   ctx.fill();
   ctx.restore();
 }
 
-function drawBoxes(ctx, detections, activeId, fontSize) {
-  const sorted = detections.slice().sort((a, b) =>
-    Number(b.id === activeId) - Number(a.id === activeId) || b.count - a.count);
-  const tags = [];
-  ctx.font = `500 ${fontSize}px "Microsoft YaHei UI", sans-serif`;
-  ctx.textBaseline = 'middle';
-  for (const box of sorted) {
-    const active = box.id === activeId;
-    const color = box.id === 'raft' ? '#ffc18b' : active ? '#a5ffe2' : '#77e0cf';
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = '#132f37db';
-    ctx.strokeRect(box.x, box.y, box.width, box.height);
-    ctx.lineWidth = active ? 0.96 : 0.67;
-    ctx.strokeStyle = color;
-    ctx.strokeRect(box.x, box.y, box.width, box.height);
-
-    const name = box.id === 'raft' ? '浮排' : buoyLabels.get(box.id);
-    const width = ctx.measureText(name).width + 4;
-    const height = fontSize + 3;
-    const x = clamp(box.x, 1, sensorWidth - width - 1);
-    const y = Math.max(1, box.y - height - 1);
-    if (tags.some((tag) => x < tag.x + tag.width && x + width > tag.x
-      && y < tag.y + tag.height && y + height > tag.y)) continue;
-    tags.push({ x, y, width, height });
-    ctx.fillStyle = '#132f37ed';
-    ctx.fillRect(x, y, width, height);
-    ctx.fillStyle = color;
-    ctx.fillText(name, x + 2, y + height / 2);
-  }
-}
-
 export function paintVisionOverlay(canvas, source, frame, plan) {
-  const ctx = canvas.getContext('2d', { alpha: false });
+  // A transparent-capable context keeps canvas text on grayscale antialiasing:
+  // the camera frame still covers every pixel, and small CJK labels stop
+  // picking up LCD colour fringing.
+  const ctx = canvas.getContext('2d');
   ctx.setTransform(canvas.width / sensorWidth, 0, 0, canvas.height / sensorHeight, 0, 0);
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(source, 0, 0, sensorWidth, sensorHeight);
-  drawArrow(ctx, projectedRoute(plan, frame.time));
+  // HUD metrics are quoted in display-canvas px; the transform draws in
+  // sensor px, so one display-canvas px is this many sensor px.
+  const unit = sensorWidth / canvas.width;
+  drawArrow(ctx, projectedRoute(plan, frame.time), unit);
   const pictureWidth = Math.min(canvas.clientWidth, canvas.clientHeight * sensorWidth / sensorHeight);
-  const fontSize = clamp(10.5 * sensorWidth / Math.max(1, pictureWidth), 5.8, 11.5);
-  const active = plan?.maneuver?.startsWith('avoid-') ? 'raft' : plan?.activeMark;
-  drawBoxes(ctx, frame.detections, active, fontSize);
+  const fontSize = clamp(10.2 * sensorWidth / Math.max(1, pictureWidth), 2.6, 9.2);
+  const active = plan?.maneuver === 'gate' ? 'gate' : plan?.maneuver?.startsWith('avoid-') ? 'raft' : plan?.activeMark;
+  drawBoxes(ctx, frame.detections, active, frame.guide, fontSize, unit);
 }

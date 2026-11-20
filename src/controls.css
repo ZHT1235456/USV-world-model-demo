@@ -1,0 +1,391 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   晨光试航台 · minimal edition — component layer
+   Only the instrument look changes: hairline chips over the bridge window,
+   a flat ink control dock, and two matte camera plates.
+   Tokens live in src/style.css (:root) — never redefine them here.
+   Amber is the pilot's hand, sea-glass the model's eye, coral a fault.
+   Zero radii, 1px hairlines, no shadows, no gloss.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ══ A · Stage-top chips ══════════════════════════════════════════════ */
+
+/* 港池 / 起航 selectors — slips of ink with a drawn chevron, not widgets. */
+.course-picker {
+  position: relative;
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+}
+.course-picker > select {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 28px;
+  padding: 0 26px 0 9px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 0;
+  background-color: rgba(8, 16, 19, .78);
+  color: var(--bone);
+  font: 400 11px/1 var(--sans);
+  letter-spacing: .03em;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: border-color .14s ease;
+}
+.course-picker > select:hover:not(:disabled) { border-color: rgba(239, 232, 220, .34); }
+.course-picker > select:focus-visible { outline-offset: 1px; }
+.course-picker > select:disabled { opacity: .55; cursor: default; }
+.course-picker option { background-color: var(--ink); color: var(--bone); }
+/* 5px corner turned 45° — a hand-drawn chevron, not an icon. */
+.course-picker::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  width: 5px;
+  height: 5px;
+  border-right: 1px solid var(--bone-2);
+  border-bottom: 1px solid var(--bone-2);
+  transform: translateY(-72%) rotate(45deg);
+  pointer-events: none;
+  transition: border-color .14s ease, opacity .14s ease;
+}
+.course-picker:hover::after { border-color: var(--bone); }
+.course-picker:has(> select:disabled)::after { opacity: .55; }
+
+/* Flight state: a 28px hairline cell divided before the passage counter. */
+.flight-state {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--rule-strong);
+  background: rgba(8, 16, 19, .78);
+  white-space: nowrap;
+}
+#scene-state {
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: .04em;
+  color: var(--bone);
+}
+#course-progress {
+  margin-left: 9px;
+  padding-left: 9px;
+  border-left: 1px solid var(--rule);
+  font: 500 10px/1 var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .06em;
+  color: var(--amber);
+}
+
+/* View picker: two engravings sharing one 28px hairline frame. */
+.view-picker {
+  display: flex;
+  align-items: stretch;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid var(--rule-strong);
+  background: rgba(8, 16, 19, .78);
+  white-space: nowrap;
+}
+.view-picker button {
+  height: 22px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--bone-2);
+  font: 400 11px/1 var(--sans);
+  letter-spacing: .04em;
+  transition: background-color .14s ease, color .14s ease;
+}
+.view-picker button:hover:not([aria-pressed="true"]) {
+  background: rgba(239, 232, 220, .06);
+  color: var(--bone);
+}
+.view-picker button[aria-pressed="true"] { background: var(--bone); color: var(--ink); }
+.view-picker button:focus-visible { outline-offset: -2px; }
+
+/* ══ B · Dock caption — legend and verdict ════════════════════════════ */
+
+/* The two line styles the 3D chart draws, reproduced 1.5px thick. */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 13px;
+  font-size: 10.5px;
+  line-height: 1;
+  letter-spacing: .03em;
+  color: var(--bone-2);
+  white-space: nowrap;
+}
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.legend i { display: block; width: 18px; height: 0; border-top: 1.5px solid var(--sea); }
+.legend span + span i { border-top-style: dashed; border-top-color: var(--amber); }
+
+/* Run verdict: right-aligned over the chart, sea for success, coral for a fault. */
+.run-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 2px 8px;
+  min-width: 0;
+  text-align: right;
+}
+.run-note strong {
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: .04em;
+  color: var(--bone);
+}
+.run-note span {
+  max-width: 260px;
+  font-size: 10.5px;
+  line-height: 1.3;
+  color: var(--mute);
+  overflow-wrap: anywhere;
+}
+body[data-result="success"] .run-note strong { color: var(--sea); }
+body[data-result="failed"] .run-note strong { color: var(--coral); }
+body[data-phase="error"] .run-note strong { color: var(--coral); }
+
+/* ══ C · Control strip ════════════════════════════════════════════════ */
+
+.timeline {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: end;
+  gap: 14px;
+  min-width: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--rule-faint);
+}
+.run-actions { display: flex; align-items: center; gap: 7px; }
+
+/* Play / pause: the one amber block in the view — the pilot's hand. */
+.primary-button {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid rgba(255, 208, 154, .5);
+  border-radius: 0;
+  background: var(--amber);
+  color: var(--ink);
+  transition: background-color .14s ease, border-color .14s ease, color .14s ease;
+}
+.primary-button:hover:not(:disabled) {
+  background: var(--amber-hi);
+  border-color: rgba(255, 208, 154, .8);
+}
+.primary-button:disabled {
+  background: rgba(239, 176, 114, .2);
+  border-color: rgba(255, 208, 154, .16);
+  color: rgba(239, 232, 220, .4);
+}
+/* CSS triangle while idle, two bars while the run is live. */
+#control-icon {
+  width: 0;
+  height: 0;
+  margin-left: 2px;
+  border-style: solid;
+  border-color: transparent transparent transparent currentColor;
+  border-width: 7px 0 7px 12px;
+}
+.primary-button.playing #control-icon {
+  width: 12px;
+  height: 14px;
+  margin-left: 0;
+  border: 0;
+  background: linear-gradient(90deg, currentColor 35%, transparent 35% 65%, currentColor 65%);
+}
+
+/* Secondary actions: hairline slips, deliberately quiet. */
+.quiet-button {
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  background: transparent;
+  color: var(--bone-2);
+  font: 400 11px/1 var(--sans);
+  letter-spacing: .05em;
+  transition: background-color .14s ease, border-color .14s ease, color .14s ease;
+}
+.quiet-button:hover:not(:disabled) {
+  background: rgba(239, 232, 220, .06);
+  border-color: var(--rule-strong);
+  color: var(--bone);
+}
+.quiet-button:disabled { opacity: .45; }
+
+/* Time body: label + tabular reading above the scale. */
+.time-body { display: grid; gap: 4px; min-width: 0; }
+.time-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  font-size: 10px;
+  letter-spacing: .08em;
+  color: var(--mute);
+}
+#time-mode {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+#time-value {
+  flex: 0 0 auto;
+  font: 500 12px/1 var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .04em;
+  color: var(--bone);
+  white-space: nowrap;
+}
+
+/* Chart-cursor timeline: 2×14px bone needle on a 3px sea/ghost scale. */
+#timeline {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  accent-color: var(--amber);
+  cursor: ew-resize;
+}
+#timeline:disabled { opacity: .55; cursor: default; }
+#timeline:focus-visible { outline-offset: 2px; }
+#timeline::-webkit-slider-runnable-track {
+  height: 3px;
+  border: 0;
+  border-radius: 0;
+  background: linear-gradient(to right, var(--sea) var(--elapsed, 0%), rgba(239, 232, 220, .16) var(--elapsed, 0%));
+}
+#timeline::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 2px;
+  height: 14px;
+  margin-top: -5.5px;
+  border: 0;
+  border-radius: 0;
+  background: var(--bone);
+}
+#timeline:disabled::-webkit-slider-thumb { background: var(--mute); }
+#timeline::-moz-range-track {
+  height: 3px;
+  border: 0;
+  border-radius: 0;
+  background: rgba(239, 232, 220, .16);
+}
+#timeline::-moz-range-progress {
+  height: 3px;
+  border-radius: 0;
+  background: var(--sea);
+}
+#timeline::-moz-range-thumb {
+  width: 2px;
+  height: 14px;
+  border: 0;
+  border-radius: 0;
+  background: var(--bone);
+}
+#timeline:disabled::-moz-range-thumb { background: var(--mute); }
+
+/* ══ D · Camera plates — the model's two eyes ═════════════════════════ */
+
+.sensor {
+  min-width: 0;
+  overflow: hidden;
+  background: var(--plate);
+  border: var(--camera-border) solid var(--rule-strong);
+}
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  height: var(--camera-heading);
+  padding: 0 12px;
+  border-bottom: 1px solid var(--rule-faint);
+}
+.section-heading h2 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-family: var(--display);
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: .1em;
+  color: var(--bone);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.section-heading span {
+  flex: 0 0 auto;
+  min-width: 0;
+  overflow: hidden;
+  font: 400 9.5px/1 var(--mono);
+  letter-spacing: .06em;
+  color: var(--mute);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* The intrinsic canvas ratio determines the height of each camera plate. */
+.sensor-frame canvas {
+  width: 100%;
+  height: auto;
+}
+#sensor { image-rendering: pixelated; }
+#analysis { image-rendering: auto; }
+
+.analysis-panel { border-color: rgba(111, 217, 204, .28); }
+.analysis-panel .section-heading h2 { color: var(--sea); }
+.analysis-readout { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
+#analysis-status { color: var(--sea); flex: 0 1 auto; }
+#analysis-goal { padding-left: 8px; border-left: 1px solid var(--rule-strong); }
+#analysis-goal[data-state="visible"] { color: #a4e3f7; }
+
+/* ══ E · Component breakpoints (page layout belongs to style.css) ═════ */
+
+@media (max-width: 860px) {
+  .section-heading { padding: 0 10px; }
+  .section-heading h2 { font-size: 13px; }
+  .section-heading span { font-size: 9px; }
+}
+
+@media (max-width: 620px) {
+  .section-heading h2 { font-size: 12.5px; letter-spacing: .08em; }
+  .section-heading span { font-size: 8.5px; }
+  .course-picker > select { font-size: 10.5px; padding-right: 24px; padding-left: 8px; }
+  .flight-state { padding: 0 8px; }
+  #course-progress { margin-left: 8px; padding-left: 8px; }
+  .view-picker button { padding: 0 9px; font-size: 10.5px; }
+}
+
+@media (max-width: 470px) {
+  .timeline { grid-template-columns: minmax(0, 1fr); align-items: stretch; gap: 9px; }
+  .stage-caption { flex-wrap: wrap; }
+  .legend { flex-wrap: wrap; gap: 4px 11px; }
+  .run-note { justify-content: flex-start; text-align: left; }
+  .course-picker > select { height: 26px; }
+  .flight-state { height: 26px; }
+  .view-picker { height: 26px; }
+  .view-picker button { height: 20px; }
+  .quiet-button { height: 28px; }
+  .time-head { font-size: 9.5px; }
+}

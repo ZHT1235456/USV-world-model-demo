@@ -4,6 +4,7 @@ import { collectionCommand, courseRoute, decisionTicks, fixedStep, frameTicks, h
 import { placeRaft, playableCourses, raftBand, randomSource, testCourses, trainingCourses } from '../src/courses.js';
 import { clamp, SeaTrial } from '../src/simulation.js';
 import { PlannerClient } from '../src/planner-client.js';
+import { detectGate } from '../src/vision-overlay.js';
 
 function encode(array) {
   const bytes = new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
@@ -140,6 +141,7 @@ window.evaluateVoyage = async (seed, courseId, maskRaft = false, launch = {}) =>
   const poses = [];
   let lastObservation = 0;
   let firstDetection = null;
+  let gateSight = null;
   let firstPlan = null;
   scene.configure(course, raft, !launch.maskGuides);
   scene.conditions(seed);
@@ -148,6 +150,9 @@ window.evaluateVoyage = async (seed, courseId, maskRaft = false, launch = {}) =>
     progress.update(trial.state);
     if (trial.ticks % frameTicks === 0) {
       const rgb = scene.sample(trial.state);
+      if (!gateSight && trial.state.time >= 0 && detectGate(rgb)) {
+        gateSight = { seconds: trial.state.time, ahead: course.gate.north - trial.state.north };
+      }
       client.observe(maskRaft ? withoutRaftBand(rgb) : rgb, trial.command, trial.state.time);
       lastObservation = performance.now();
     }
@@ -177,6 +182,7 @@ window.evaluateVoyage = async (seed, courseId, maskRaft = false, launch = {}) =>
     seed, course: course.id, ...progress.result, seconds: trial.state.time,
     marks: progress.gates.map((gate, i) => ({ id: course.marks[i].id, ...gate, passed: passedMark(gate, course.marks[i]) })),
     raft: raft ? { clearance: progress.raftClearance, crossing: progress.raftCrossing, detection: firstDetection } : null,
-    finish: progress.finish, speedLimit: course.gate.speed, firstPlan, latencies, computes, poses,
+    shoreClearance: progress.shoreClearance, gateSight, finish: progress.finish, speedLimit: course.gate.speed,
+    firstPlan, latencies, computes, poses,
   };
 };

@@ -1,12 +1,13 @@
 import './style.css';
+import './controls.css';
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { HarborScene } from './harbor.js';
 import { decisionTicks, fixedStep, frameTicks, MissionProgress, passedMark, startTrial } from './mission.js';
 import { placeRaft, playableCourses } from './courses.js';
-import { sensorHeight, sensorWidth } from './optics.js';
+import { chartGuides, detectGuideDirection, sensorHeight, sensorWidth } from './optics.js';
 import { PlannerClient } from './planner-client.js';
-import { detectBuoys, paintVisionOverlay } from './vision-overlay.js';
+import { detectBuoys, detectGate, paintVisionOverlay } from './vision-overlay.js';
 import { detectRaft } from './raft-vision.js';
 
 const element = (id) => document.getElementById(id);
@@ -21,6 +22,7 @@ const sensor = element('sensor').getContext('2d', { alpha: false });
 const sensorImage = sensor.createImageData(sensorWidth, sensorHeight);
 const analysisCanvas = element('analysis');
 const analysisStatus = element('analysis-status');
+const analysisGoal = element('analysis-goal');
 const notification = element('run-notification');
 const views = Array.from(document.querySelectorAll('[data-view]'));
 const asset = (path) => new URL(path, document.baseURI).href;
@@ -34,6 +36,7 @@ let progress;
 let phase = 'loading';
 let prediction;
 let latestFrame;
+let guideAnchors;
 let lastPainted;
 let lastAnalysisPlan;
 let sensorFlight;
@@ -60,6 +63,11 @@ function copyProgress() {
   return progress.gates.map((gate) => ({ ...gate }));
 }
 
+function visionFrame(rgb, time, goalSeen = false) {
+  const goal = detectGate(rgb);
+  return { rgb, time, goal, goalSeen: goalSeen || Boolean(goal), guide: detectGuideDirection(rgb, guideAnchors) };
+}
+
 function paintSensor(frame, plan) {
   if (!frame || (frame === lastPainted && plan === lastAnalysisPlan)) return;
   if (frame !== lastPainted) {
@@ -77,14 +85,26 @@ function paintSensor(frame, plan) {
     frame.detections = detectBuoys(frame.rgb);
     const raft = detectRaft(frame.rgb);
     if (raft) frame.detections.push(raft.box);
+    if (frame.goal) frame.detections.push(frame.goal);
   }
   const orders = { 'avoid-port': '浮排左侧绕行', 'avoid-starboard': '浮排右侧绕行', gate: '减速穿门' };
   const hasRaft = frame.detections.some(({ id }) => id === 'raft');
-  const count = frame.detections.filter(({ id }) => id !== 'raft').length;
-  const turning = plan?.maneuver === 'turn-entry';
-  const status = turning ? (plan.fix.guideCount ? '箭头定位 · 掉头' : '掉头中')
-    : orders[plan?.maneuver] ?? (hasRaft ? '识别浮排' : count ? `识别 ${count} 标` : '未检出');
+  const count = frame.detections.filter(({ id }) => typeof id === 'number').length;
+  let status;
+  if (plan?.maneuver === 'turn-entry') {
+    const side = plan.entrySide < 0 ? '左' : '右';
+    status = `${frame.guide ? '箭头定位 · ' : ''}向${side}掉头`;
+  } else if (plan) {
+    const { rudder } = plan.command;
+    const direction = rudder < -8 ? '向左修正' : rudder > 8 ? '向右修正' : '沿航道前进';
+    status = orders[plan.maneuver] ?? direction;
+  } else {
+    status = frame.guide ? '已识别航道方向' : hasRaft ? '识别浮排' : count ? `识别 ${count} 标` : '待采样';
+  }
   if (analysisStatus.textContent !== status) analysisStatus.textContent = status;
+  const goalStatus = frame.goal ? '终点已识别' : frame.goalSeen ? '终点已出视野' : '终点待确认';
+  if (analysisGoal.textContent !== goalStatus) analysisGoal.textContent = goalStatus;
+  analysisGoal.dataset.state = frame.goal ? 'visible' : frame.goalSeen ? 'seen' : 'unknown';
   paintVisionOverlay(analysisCanvas, sensor.canvas, frame, plan);
   lastPainted = frame;
   lastAnalysisPlan = plan;
@@ -174,7 +194,7 @@ function refresh() {
     element('run-detail').textContent = failure;
   } else if (phase === 'finished') {
     element('run-note').textContent = progress.result.success ? '航次完成' : progress.result.reason;
-    const clearance = Math.min(progress.raftClearance, ...progress.gates.map((gate) => gate.clearance));
+    const clearance = Math.min(progress.shoreClearance, progress.raftClearance, ...progress.gates.map((gate) => gate.clearance));
     const stats = Number.isFinite(clearance) ? [`最小净距 ${clearance.toFixed(2)} m`] : [];
     if (progress.finish && course.gate.speed !== null) stats.push(`过门 ${progress.finish.speed.toFixed(2)} m/s`);
     element('run-detail').textContent = stats.join(' · ');
@@ -198,6 +218,7 @@ function refresh() {
 function initialVoyage() {
   const raft = placeRaft(course, voyageSeed);
   scene.configure(course, raft);
+  guideAnchors = chartGuides(course).flatMap(({ anchors }) => anchors);
   trial = startTrial(course, voyageSeed, departurePicker.value === 'reverse' ? Math.PI : null);
   progress = new MissionProgress(trial.state, course, raft);
   trace = [];
@@ -212,13 +233,13 @@ function initialVoyage() {
   scene.conditions(voyageSeed);
   element('course-progress').title = '过标顺序 ' + course.marks.map(({ label }) => label).join(' → ');
   frameDrawn = false;
-  latestFrame = { rgb: scene.sample(trial.state), time: -2 };
+  latestFrame = visionFrame(scene.sample(trial.state), -2);
 }
 
 function observe(state, command, id) {
   const work = scene.sampleAsync(state).then((rgb) => {
     if (id !== generation) return;
-    latestFrame = { rgb, time: state.time };
+    latestFrame = visionFrame(rgb, state.time, latestFrame.goalSeen);
     client.observe(rgb.slice(), command, state.time);
     if (lookAtTime === null) paintSensor(latestFrame, prediction);
   }).catch((error) => {
@@ -406,6 +427,7 @@ function bindControls() {
 
 async function boot() {
   try {
+    setPhase('loading');
     scene = new HarborScene(stage);
     initialVoyage();
     new ResizeObserver(() => {

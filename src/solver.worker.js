@@ -1,9 +1,9 @@
 import * as ort from 'onnxruntime-web/wasm';
 import loader from '../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs?url';
 import wasm from '../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm?url';
-import { historyLength } from './mission.js';
+import { historyLength, predictedState } from './mission.js';
 import { featureCount, imageHeight, imageWidth, VisualHistory } from './optics.js';
-import { entryAligned, searchPlans } from './planner.js';
+import { entryRecovered, searchPlans } from './planner.js';
 import { RaftTrack } from './raft-vision.js';
 
 ort.env.wasm.numThreads = 1;
@@ -79,7 +79,7 @@ async function handle(data) {
       const started = performance.now();
       const state = await estimate();
       const { count, guideCount = 0, quality } = history.pose;
-      if (entrySide && entryAligned(state[2])) entrySide = 0;
+      if (entrySide && entryRecovered(predictedState(state), entrySide)) entrySide = 0;
       const reverseEntry = stage === 0 && state[0] < course.marks[0].north - 2 && quality > 0 && Math.cos(state[2]) < 0;
       const turns = entrySide ? [entrySide] : reverseEntry ? [-1, 1] : [0];
       result = await searchPlans(state, transition, course, stage, track.position, avoidanceSide, turns);

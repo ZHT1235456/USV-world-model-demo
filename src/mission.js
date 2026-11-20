@@ -1,5 +1,5 @@
 import { SeaTrial, clamp, degrees, fixedStep } from './simulation.js';
-import { randomSource } from './courses.js';
+import { gatePostRadius, randomSource } from './courses.js';
 
 export { fixedStep, randomSource };
 export const frameTicks = 6;
@@ -8,6 +8,9 @@ export const historyLength = 20;
 export const horizon = 20;
 export const decisionStep = decisionTicks * fixedStep;
 export const minimumClearance = 0.5;
+const hullHalfLength = 1.2;
+const hullHalfBeam = 0.45;
+const startBoundary = -9;
 
 export function wrapAngle(angle) {
   return Math.atan2(Math.sin(angle), Math.cos(angle));
@@ -106,12 +109,19 @@ export function hullClearance(s, mark) {
   const d = Math.sin(s.heading);
   const along = north * c + east * d;
   const across = -north * d + east * c;
-  return Math.hypot(Math.max(0, Math.abs(along) - 1.2), Math.max(0, Math.abs(across) - 0.45)) - mark.radius;
+  return Math.hypot(Math.max(0, Math.abs(along) - hullHalfLength), Math.max(0, Math.abs(across) - hullHalfBeam)) - mark.radius;
 }
 
 export function gateClearance(state, gate) {
-  const width = 1.2 * Math.abs(Math.sin(state.heading)) + 0.45 * Math.abs(Math.cos(state.heading));
-  return gate.halfWidth - 0.16 - width - Math.abs(state.east - gate.east);
+  const width = hullHalfLength * Math.abs(Math.sin(state.heading)) + hullHalfBeam * Math.abs(Math.cos(state.heading));
+  return gate.halfWidth - gatePostRadius - width - Math.abs(state.east - gate.east);
+}
+
+export function shoreClearance(state, course) {
+  const c = Math.abs(Math.cos(state.heading)), s = Math.abs(Math.sin(state.heading));
+  const side = course.bank - Math.abs(state.east - course.center) - hullHalfLength * s - hullHalfBeam * c;
+  const rear = state.north - startBoundary - hullHalfLength * c - hullHalfBeam * s;
+  return Math.min(side, rear);
 }
 
 export function passedMark(crossing, mark) {
@@ -125,6 +135,7 @@ export class MissionProgress {
     this.raft = raft;
     this.raftClearance = Infinity;
     this.raftCrossing = null;
+    this.shoreClearance = Infinity;
     this.finish = null;
     this.gates = course.marks.map(() => ({ clearance: Infinity, crossing: null }));
     this.result = null;
@@ -132,7 +143,12 @@ export class MissionProgress {
 
   update(s) {
     if (this.result) return;
-    const { marks, gate: exit, center, bank } = this.course;
+    const { marks, gate: exit } = this.course;
+    this.shoreClearance = Math.min(this.shoreClearance, shoreClearance(s, this.course));
+    if (this.shoreClearance <= 0) {
+      this.result = { success: false, reason: '艇身触碰航道边界' };
+      return;
+    }
     const crossingAt = (north) => this.last.north < north && s.north >= north;
     const interpolate = (north, key) => this.last[key] + (s[key] - this.last[key])
       * (north - this.last.north) / (s.north - this.last.north);
@@ -158,8 +174,8 @@ export class MissionProgress {
       else if (clearance < 0) reason = '偏离出场门';
       else if (exit.speed !== null && speed > exit.speed) reason = '过门速度超限';
       this.result = { success: !reason, reason: reason || '通过出场门' };
-    } else if (s.time >= 78 || Math.abs(s.east - center) >= bank - 0.45 || s.north < -9) {
-      this.result = { success: false, reason: s.time >= 78 ? '航次超时' : '驶出试航区' };
+    } else if (s.time >= 78) {
+      this.result = { success: false, reason: '航次超时' };
     }
     this.last = { ...s };
   }

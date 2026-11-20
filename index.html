@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#101f2b" />
+    <meta name="theme-color" content="#0b1416" />
     <meta name="description" content="使用共享视觉世界模型的无人艇绕标、避障与低速穿门仿真" />
     <link rel="icon" href="/favicon.png" type="image/png" />
     <title>视觉世界模型驱动的无人艇航行模拟</title>
@@ -12,7 +12,16 @@
     <div class="application">
       <header class="masthead">
         <div class="identity">
-          <div class="crest" aria-hidden="true"><i></i><b></b></div>
+          <div class="crest" aria-hidden="true">
+            <svg viewBox="0 0 44 44" role="presentation" focusable="false">
+              <circle class="crest-ring" cx="22" cy="22" r="20.5" />
+              <path class="crest-gate" d="M11.4 15.6v12.2M32.6 15.6v12.2" />
+              <path class="crest-water" d="M8 28.7h28" />
+              <path class="crest-hull" d="M15.7 24.3h12.6l-3 4.3h-6.5z" />
+              <path class="crest-mast" d="M22 14.3v10" />
+              <circle class="crest-lamp" cx="22" cy="14" r="1.7" />
+            </svg>
+          </div>
           <h1>视觉世界模型驱动的无人艇航行模拟</h1>
         </div>
         <div class="mast-actions">
@@ -74,9 +83,15 @@
             </div>
           </section>
           <section class="sensor analysis-panel">
-            <div class="section-heading"><h2>视觉解析</h2><span id="analysis-status">待采样</span></div>
+            <div class="section-heading">
+              <h2>视觉解析</h2>
+              <div class="analysis-readout">
+                <span id="analysis-status">待采样</span>
+                <span id="analysis-goal">终点待确认</span>
+              </div>
+            </div>
             <div class="sensor-frame">
-              <canvas id="analysis" width="480" height="288" aria-label="同一帧前视画面叠加航标、浮排识别框和规划箭头"></canvas>
+              <canvas id="analysis" width="480" height="288" aria-label="同一帧前视画面叠加识别出的航道方向、航标、浮排和出场门，以及预测航迹"></canvas>
             </div>
           </section>
         </aside>

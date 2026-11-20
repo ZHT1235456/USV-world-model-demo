@@ -22,6 +22,8 @@ def summarize(runs):
         "mark_passes": {mark["id"]: sum(run["marks"][i]["passed"] for run in runs)
                         for i, mark in enumerate(runs[0]["marks"])},
         "min_buoy_clearance_m": round(min(mark["clearance"] for run in runs for mark in run["marks"]), 3),
+        "min_shore_clearance_m": round(min(run["shoreClearance"] for run in runs), 3),
+        "visual_gate_detections": sum(run["gateSight"] is not None for run in runs),
         "raft_detections": len(detections),
         "min_raft_clearance_m": round(min(raft["clearance"] for raft in rafts), 3) if rafts else None,
         "min_raft_detection_lead_m": round(min(detection["ahead"] for detection in detections), 3) if detections else None,
@@ -101,6 +103,8 @@ def main():
         for run in group["runs"]:
             if not run["success"]:
                 raise SystemExit("At least one closed-loop voyage failed")
+            if run["shoreClearance"] <= 0 or not run["gateSight"] or run["gateSight"]["ahead"] <= 0:
+                raise SystemExit("The hull touched the channel boundary or the camera did not recognize the gate before crossing")
             if args.reverse_start and (run["firstPlan"]["guidePoints"] < 2 or run["firstPlan"]["headingError"] > 5):
                 raise SystemExit("Reverse launch did not identify its heading from arrow guides before the first command")
             if run["raft"]:

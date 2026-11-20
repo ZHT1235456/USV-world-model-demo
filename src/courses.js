@@ -8,6 +8,11 @@ const palette = [
 export const buoyBands = palette.map(({ label, band }, index) => ({ id: index + 1, label, band }));
 export const raftRadius = 0.94;
 export const raftBand = 0xe7567a;
+export const gatePostRadius = 0.16;
+export const gateBands = [
+  { side: -1, color: 0xff7b63 },
+  { side: 1, color: 0x5ee4cd },
+];
 
 function chart(id, title, center, bank, marks, [north, east, halfWidth, speed = null]) {
   return {

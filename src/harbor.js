@@ -3,7 +3,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { createVessel } from './vessel.js';
 import { makeOcean } from './ocean.js';
-import { raftBand, raftRadius, randomSource } from './courses.js';
+import { gateBands, gatePostRadius, raftBand, raftRadius, randomSource } from './courses.js';
 import { chartBeacons, chartGuides, cameraForward, cameraHeight, sensorFov, sensorHeight, sensorWidth } from './optics.js';
 import { addSurroundingBanks, createHarborConcrete, quayBlock } from './surroundings.js';
 
@@ -248,14 +248,15 @@ function buildQuays(scene, detailed, course) {
       for (const object of scene.children.slice(displayStart)) object.layers.set(displayLayer);
     }
   }
-  for (const side of [-1, 1]) {
+  for (const { side, color } of gateBands) {
     const block = wallSide - 2.35;
     const end = center + side * (wallSide - block / 2);
     quayBlock(scene, concrete, far, .43, end, 1.46, 1.43, block);
     box(scene, cap, far - 0.06, 1.17, end, 1.54, 0.125, block + 0.03);
     const post = exit.east + side * exit.halfWidth;
-    cylinder(scene, trim, exit.north, 0.27, post, 0.16, 0.8, 14);
-    cylinder(scene, finish(side < 0 ? 0xe9bc88 : 0xc0e2d3), exit.north, 0.69, post, 0.13, 0.105, 14);
+    cylinder(scene, trim, exit.north, 0.44, post, gatePostRadius, 1.02, 14);
+    const sleeve = new THREE.MeshBasicMaterial({ color, toneMapped: false, fog: false });
+    cylinder(scene, sleeve, exit.north, 0.83, post, gatePostRadius + 0.004, 0.34, 14);
   }
   if (detailed) {
     const banks = new THREE.Group();

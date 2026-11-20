@@ -33,16 +33,9 @@ export function chartBeacons(course) {
   ];
 }
 
-const guideColors = [0, 1, 2].flatMap((high) => [1, 2].flatMap((offset) => {
-  const low = (high + offset) % 3;
-  return [89, 116, 143, 170, 197].map((middle) => {
-    const rgb = [];
-    rgb[high] = 237;
-    rgb[low] = 64;
-    rgb[3 - high - low] = middle;
-    return rgb;
-  });
-}));
+// Keep the tail and tip codes within yellow while leaving enough RGB distance to tell them apart.
+const guideColors = [187, 207, 227, 247].flatMap((red) =>
+  [red - 4, red - 20].flatMap((green) => [30, 56, 82, 108].map((blue) => [red, green, blue])));
 
 export function chartGuides(course) {
   const length = course.gate.north;
@@ -164,7 +157,7 @@ function optimizePose(points, pose, course) {
   };
 }
 
-export function poseFromFrame(rgb, beacons, course) {
+function beaconCenters(rgb, beacons) {
   const colors = beacons.map(() => ({ count: 0, x: 0, y: 0 }));
   for (let y = 0; y < sensorHeight / 2; y++) {
     for (let x = 0; x < sensorWidth; x++) {
@@ -172,10 +165,10 @@ export function poseFromFrame(rgb, beacons, course) {
       const r = rgb[i], g = rgb[i + 1], b = rgb[i + 2];
       const low = Math.min(r, g, b);
       const high = Math.max(r, g, b);
-      const guidePixel = low >= 58 && low <= 70 && high >= 229;
+      const guidePixel = r >= 180 && g >= 160 && Math.abs(r - g) <= 30 && b >= 23 && b <= 115;
       if (!guidePixel && (high < 219 || low > 49)) continue;
       let best = -1;
-      let error = guidePixel ? 9 * 9 : 22 * 22;
+      let error = guidePixel ? 7 * 7 : 22 * 22;
       for (let j = 0; j < beacons.length; j++) {
         if (Boolean(beacons[j].guide) !== guidePixel) continue;
         const signature = beacons[j].rgb;
@@ -193,13 +186,33 @@ export function poseFromFrame(rgb, beacons, course) {
       }
     }
   }
-  const points = colors.flatMap(({ count, x, y }, i) => {
-    if (count < 2) return [];
+  return colors.map(({ count, x, y }) => {
+    if (count < 2) return null;
     x /= count;
     y /= count;
+    return x < 2 || x > sensorWidth - 2 || y > sensorHeight / 2 - 2 || count > 260 ? null : { x, y, count };
+  });
+}
+
+export function detectGuideDirection(rgb, anchors) {
+  const centers = beaconCenters(rgb, anchors);
+  let direction = null;
+  // Each sign has a uniquely colored tail and tip, in that order in chartGuides.
+  for (let i = 0; i < centers.length; i += 2) {
+    const tail = centers[i], tip = centers[i + 1];
+    if (!tail || !tip || Math.hypot(tip.x - tail.x, tip.y - tail.y) < 2.5) continue;
+    const support = Math.min(tail.count, tip.count);
+    if (!direction || support > direction.support) direction = { tail, tip, support };
+  }
+  return direction;
+}
+
+export function poseFromFrame(rgb, beacons, course) {
+  const points = beaconCenters(rgb, beacons).flatMap((center, i) => {
+    if (!center) return [];
+    const { x, y, count } = center;
     const u = x - sensorWidth / 2;
     const v = sensorHeight / 2 - y;
-    if (x < 2 || x > sensorWidth - 2 || v < 2 || count > 260) return [];
     const anchor = beacons[i];
     const up = anchor.height - cameraHeight;
     const forward = focal * up / v;

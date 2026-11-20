@@ -1,11 +1,16 @@
-import { courseRoute, decisionStep, gateClearance, horizon, hullClearance, minimumClearance, predictedState, referenceEast, referenceRPM, referenceRudder } from './mission.js';
+import { courseRoute, decisionStep, gateClearance, horizon, hullClearance, minimumClearance, predictedState, referenceEast, referenceRPM, referenceRudder, shoreClearance, wrapAngle } from './mission.js';
 import { clamp } from './simulation.js';
 
 const rudderBiases = [0, -7, 7, -14, 14];
 const throttleBiases = [0, -135, 115];
+const recoveryRPMs = [780, 910, 1080];
+const turnClearance = 0.9;
 
-export function entryAligned(heading) {
-  return Math.cos(heading) >= 0.35;
+export function entryRecovered(state, side) {
+  const { heading, surge, sway } = state;
+  const c = Math.cos(heading);
+  const lateralSpeed = surge * Math.sin(heading) + sway * c;
+  return c > 0.8 && side * wrapAngle(heading) > 0.22 && side * lateralSpeed > 0.06;
 }
 
 function point(state, step = 0) {
@@ -19,15 +24,10 @@ function clearanceCost(candidate, state, previous, step, course, raft) {
   const { gate, marks } = course;
   const offset = state.east - referenceEast(state.north, candidate.route);
   candidate.cost += 0.037 * offset * offset;
-  candidate.cost += 23 * Math.max(0, Math.abs(state.east - course.center) - course.bank + 0.9) ** 2;
-  if (candidate.entrySide) {
-    const c = Math.abs(Math.cos(state.heading)), s = Math.abs(Math.sin(state.heading));
-    const bankGap = course.bank - Math.abs(state.east - course.center) - 0.45 * c - 1.2 * s;
-    const startGap = state.north + 9 - 1.2 * c - 0.45 * s;
-    const gap = Math.min(bankGap, startGap);
-    candidate.gap = Math.min(candidate.gap, gap);
-    candidate.cost += 44 * Math.max(0, 0.70 - gap) ** 2;
-  }
+  const shoreGap = shoreClearance(state, course);
+  candidate.shoreGap = Math.min(candidate.shoreGap, shoreGap);
+  const margin = candidate.entrySide ? turnClearance : minimumClearance;
+  candidate.cost += 44 * Math.max(0, margin - shoreGap) ** 2;
   for (const mark of marks) {
     if (Math.abs(mark.north - state.north) > 6) continue;
     const gap = hullClearance(state, mark);
@@ -57,14 +57,16 @@ function clearanceCost(candidate, state, previous, step, course, raft) {
 
 export async function searchPlans(initial, transition, course, activeMark, raft, committedSide, entryTurns = [0]) {
   const turning = entryTurns[0] !== 0;
-  const steps = turning ? Math.round(10 / decisionStep) : horizon;
+  const steps = turning ? Math.round(14 / decisionStep) : horizon;
   const steering = turning ? [0] : rudderBiases;
+  const throttles = turning ? recoveryRPMs : throttleBiases;
   const sides = raft ? (committedSide ? [committedSide] : [-1, 1]) : [0];
   const candidates = sides.flatMap((side) => {
     const route = courseRoute(course, raft, side);
-    return entryTurns.flatMap((entrySide) => throttleBiases.flatMap((throttle) => steering.map((bias) => ({
-      route, side, entrySide, throttle, bias, trajectory: [], command: null, closest: null, gap: Infinity,
-      cost: 0.30 * (bias / 14) ** 2 + 0.46 * (throttle / 135) ** 2,
+    return entryTurns.flatMap((entrySide) => throttles.flatMap((throttle) => steering.map((bias) => ({
+      route, side, entrySide, throttle, bias, recovering: turning,
+      trajectory: [], command: null, closest: null, gap: Infinity, shoreGap: Infinity,
+      cost: turning ? 0 : 0.30 * (bias / 14) ** 2 + 0.46 * (throttle / 135) ** 2,
     }))));
   });
   const count = candidates.length;
@@ -79,10 +81,15 @@ export async function searchPlans(initial, transition, course, activeMark, raft,
       const candidate = candidates[i];
       const previous = predictedState(states, i * 8);
       const ramp = Math.max(0, 1 - step / 4);
-      const commanded = candidate.entrySide && !entryAligned(previous.heading)
+      if (candidate.recovering && entryRecovered(previous, candidate.entrySide)) candidate.recovering = false;
+      const facing = Math.cos(previous.heading);
+      const commanded = candidate.recovering && facing < 0.35
         ? 35 * candidate.entrySide : referenceRudder(previous, candidate.route) + candidate.bias * ramp;
       const rudder = clamp(commanded, -35, 35);
-      const rpm = referenceRPM(previous, course.gate, 1800 + candidate.throttle);
+      // Use propeller thrust to start the turn, then let the boat shed speed before the outside of the arc.
+      const turningPower = clamp((0.47 - facing) / 0.12, 0, 1);
+      const rpm = candidate.recovering ? candidate.throttle + (2100 - candidate.throttle) * turningPower
+        : referenceRPM(previous, course.gate, turning ? 1800 : 1800 + candidate.throttle);
       commands[i * 2] = rpm;
       commands[i * 2 + 1] = rudder;
       if (step === 0) candidate.command = { rpm, rudder };
@@ -103,7 +110,11 @@ export async function searchPlans(initial, transition, course, activeMark, raft,
     candidate.cost += 0.10 * (end.east - referenceEast(end.north, candidate.route)) ** 2;
   }
   candidates.sort((a, b) => a.cost - b.cost);
-  const best = candidates.find(({ gap }) => gap >= minimumClearance) ?? candidates[0];
+  const inside = candidates.filter(({ shoreGap }) => shoreGap >= minimumClearance);
+  const best = inside.find(({ shoreGap, gap }) => shoreGap >= (turning ? turnClearance : minimumClearance) && gap >= minimumClearance)
+    ?? inside.find(({ gap }) => gap >= minimumClearance)
+    ?? inside[0]
+    ?? candidates.reduce((safest, candidate) => candidate.shoreGap > safest.shoreGap ? candidate : safest);
   return {
     trajectory: best.trajectory,
     options: count,
